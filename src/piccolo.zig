@@ -18,6 +18,14 @@ const Editor = struct {
 };
 
 //
+// Utilities
+//
+
+fn ctrlKey(k: u8) u8 {
+    return (k) & 0x1f;
+}
+
+//
 // Terminal
 //
 
@@ -90,6 +98,6 @@ pub fn main() void {
             debug.print("{d} ('{c}')\r\n", .{ buf[0], buf[0] });
         }
 
-        if (buf[0] == 'q') break;
+        if (buf[0] == ctrlKey('q')) break;
     }
 }
