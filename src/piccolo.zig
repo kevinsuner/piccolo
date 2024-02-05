@@ -29,20 +29,27 @@ fn ctrlKey(k: u8) u8 {
 // Terminal
 //
 
-fn die(str: []const u8, err: anyerror) void {
+fn clean(e: *Editor) void {
+    disableRawMode(e);
+    os.exit(0);
+}
+
+fn die(e: *Editor, str: []const u8, err: anyerror, code: u8) void {
+    disableRawMode(e);
     debug.print("{s}: {s}\n", .{ str, @errorName(err) });
-    os.exit(1);
+    os.exit(code);
 }
 
 fn disableRawMode(e: *Editor) void {
     os.tcsetattr(e.tty.handle, .FLUSH, e.og_termios) catch |err| {
-        die("tcsetattr", err);
+        debug.print("tcsetattr: {s}\n", .{@errorName(err)});
+        os.exit(1);
     };
 }
 
 fn enableRawMode(e: *Editor) void {
     e.og_termios = os.tcgetattr(e.tty.handle) catch |err| {
-        die("tcgetattr", err);
+        die(e, "tcgetattr", err, 1);
         return undefined;
     };
 
@@ -67,14 +74,14 @@ fn enableRawMode(e: *Editor) void {
     raw.cc[os.system.V.TIME] = 1;
 
     os.tcsetattr(e.tty.handle, .FLUSH, raw) catch |err| {
-        die("tcsetattr", err);
+        die(e, "tcsetattr", err, 1);
     };
 }
 
-fn editorReadKey(tty: fs.File) u8 {
+fn editorReadKey(e: *Editor) u8 {
     var buf: [1]u8 = undefined;
-    _ = tty.read(&buf) catch |err| {
-        die("read", err);
+    _ = e.tty.read(&buf) catch |err| {
+        die(e, "read", err, 1);
         return undefined;
     };
 
@@ -85,11 +92,11 @@ fn editorReadKey(tty: fs.File) u8 {
 // Input
 //
 
-fn editorProcessKeypress(tty: fs.File) void {
-    var c = editorReadKey(tty);
+fn editorProcessKeypress(e: *Editor) void {
+    var c = editorReadKey(e);
     switch (c) {
         ctrlKey('q') => {
-            os.exit(0);
+            clean(e);
         },
         else => {},
     }
@@ -101,16 +108,16 @@ fn editorProcessKeypress(tty: fs.File) void {
 
 pub fn main() void {
     var tty = fs.cwd().openFile("/dev/tty", .{ .mode = .read_write }) catch |err| {
-        die("openFile", err);
+        debug.print("openFile: {s}\n", .{@errorName(err)});
+        os.exit(1);
         return undefined;
     };
     defer tty.close();
 
     var e = Editor{ .tty = tty, .og_termios = undefined };
     enableRawMode(&e);
-    defer disableRawMode(&e);
 
     while (true) {
-        editorProcessKeypress(e.tty);
+        editorProcessKeypress(&e);
     }
 }
