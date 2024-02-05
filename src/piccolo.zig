@@ -71,6 +71,30 @@ fn enableRawMode(e: *Editor) void {
     };
 }
 
+fn editorReadKey(tty: fs.File) u8 {
+    var buf: [1]u8 = undefined;
+    _ = tty.read(&buf) catch |err| {
+        die("read", err);
+        return undefined;
+    };
+
+    return buf[0];
+}
+
+//
+// Input
+//
+
+fn editorProcessKeypress(tty: fs.File) void {
+    var c = editorReadKey(tty);
+    switch (c) {
+        ctrlKey('q') => {
+            os.exit(0);
+        },
+        else => {},
+    }
+}
+
 //
 // Init
 //
@@ -87,17 +111,6 @@ pub fn main() void {
     defer disableRawMode(&e);
 
     while (true) {
-        var buf = [1]u8{'\u{0000}'};
-        _ = e.tty.read(&buf) catch |err| {
-            die("read", err);
-        };
-
-        if (ascii.isControl(buf[0])) {
-            debug.print("{d}\r\n", .{buf[0]});
-        } else {
-            debug.print("{d} ('{c}')\r\n", .{ buf[0], buf[0] });
-        }
-
-        if (buf[0] == ctrlKey('q')) break;
+        editorProcessKeypress(e.tty);
     }
 }
