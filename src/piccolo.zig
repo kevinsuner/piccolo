@@ -29,51 +29,30 @@ fn ctrlKey(k: u8) u8 {
 // Terminal
 //
 
-fn clean(e: *Editor) void {
-    _ = os.write(os.linux.STDOUT_FILENO, "\x1b[2J") catch |err| {
-        debug.print("write: {s}\n", .{@errorName(err)});
-        os.exit(1);
-    };
-
-    _ = os.write(os.linux.STDOUT_FILENO, "\x1b[H") catch |err| {
-        debug.print("write: {s}\n", .{@errorName(err)});
-        os.exit(1);
-    };
-
-    disableRawMode(e);
+fn clean(e: *Editor) !void {
+    _ = try os.write(os.linux.STDOUT_FILENO, "\x1b[2J");
+    _ = try os.write(os.linux.STDOUT_FILENO, "\x1b[H");
+    try disableRawMode(e);
     os.exit(0);
 }
 
-fn die(e: *Editor, str: []const u8, err: anyerror, code: u8) void {
-    _ = os.write(os.linux.STDOUT_FILENO, "\x1b[2J") catch |wErr| {
-        debug.print("write: {s}\n", .{@errorName(wErr)});
-        os.exit(1);
-    };
+fn die(e: *Editor, str: []const u8, err: anyerror, code: u8) !void {
+    _ = try os.write(os.linux.STDOUT_FILENO, "\x1b[2J");
+    _ = try os.write(os.linux.STDOUT_FILENO, "\x1b[H");
+    try disableRawMode(e);
 
-    _ = os.write(os.linux.STDOUT_FILENO, "\x1b[H") catch |wErr| {
-        debug.print("write: {s}\n", .{@errorName(wErr)});
-        os.exit(1);
-    };
-
-    disableRawMode(e);
     debug.print("{s}: {s}\n", .{ str, @errorName(err) });
     os.exit(code);
 }
 
-fn disableRawMode(e: *Editor) void {
-    os.tcsetattr(e.tty.handle, .FLUSH, e.og_termios) catch |err| {
-        debug.print("tcsetattr: {s}\n", .{@errorName(err)});
-        os.exit(1);
-    };
+fn disableRawMode(e: *Editor) !void {
+    try os.tcsetattr(e.tty.handle, .FLUSH, e.og_termios);
 }
 
-fn enableRawMode(e: *Editor) void {
-    e.og_termios = os.tcgetattr(e.tty.handle) catch |err| {
-        die(e, "tcgetattr", err, 1);
-        return undefined;
-    };
-
+fn enableRawMode(e: *Editor) !void {
+    e.og_termios = try os.tcgetattr(e.tty.handle);
     var raw = e.og_termios;
+
     raw.iflag &= ~@as(
         os.linux.tcflag_t,
         os.linux.IXON | os.linux.ICRNL | os.linux.BRKINT | os.linux.INPCK | os.linux.ISTRIP,
@@ -93,17 +72,12 @@ fn enableRawMode(e: *Editor) void {
     raw.cc[os.system.V.MIN] = 0;
     raw.cc[os.system.V.TIME] = 1;
 
-    os.tcsetattr(e.tty.handle, .FLUSH, raw) catch |err| {
-        die(e, "tcsetattr", err, 1);
-    };
+    try os.tcsetattr(e.tty.handle, .FLUSH, raw);
 }
 
-fn editorReadKey(e: *Editor) u8 {
+fn editorReadKey(tty: fs.File) !u8 {
     var buf: [1]u8 = undefined;
-    _ = e.tty.read(&buf) catch |err| {
-        die(e, "read", err, 1);
-    };
-
+    _ = try tty.read(&buf);
     return buf[0];
 }
 
@@ -111,40 +85,29 @@ fn editorReadKey(e: *Editor) u8 {
 // Output
 //
 
-fn editorDrawRows(e: *Editor) void {
+fn editorDrawRows() !void {
     var y: i8 = 0;
     while (y < 24) : (y += 1) {
-        _ = os.write(os.linux.STDOUT_FILENO, "~\r\n") catch |err| {
-            die(e, "write", err, 1);
-        };
+        _ = try os.write(os.linux.STDOUT_FILENO, "~\r\n");
     }
 }
 
-fn editorRefreshScreen(e: *Editor) void {
-    _ = os.write(os.linux.STDOUT_FILENO, "\x1b[2J") catch |err| {
-        die(e, "write", err, 1);
-    };
-
-    _ = os.write(os.linux.STDOUT_FILENO, "\x1b[H") catch |err| {
-        die(e, "write", err, 1);
-    };
-
-    editorDrawRows(e);
-
-    _ = os.write(os.linux.STDOUT_FILENO, "\x1b[H") catch |err| {
-        die(e, "write", err, 1);
-    };
+fn editorRefreshScreen() !void {
+    _ = try os.write(os.linux.STDOUT_FILENO, "\x1b[2J");
+    _ = try os.write(os.linux.STDOUT_FILENO, "\x1b[H");
+    try editorDrawRows();
+    _ = try os.write(os.linux.STDOUT_FILENO, "\x1b[H");
 }
 
 //
 // Input
 //
 
-fn editorProcessKeypress(e: *Editor) void {
-    var c = editorReadKey(e);
+fn editorProcessKeypress(e: *Editor) !void {
+    var c = try editorReadKey(e.tty);
     switch (c) {
         ctrlKey('q') => {
-            clean(e);
+            try clean(e);
         },
         else => {},
     }
@@ -154,19 +117,21 @@ fn editorProcessKeypress(e: *Editor) void {
 // Init
 //
 
-pub fn main() void {
-    var tty = fs.cwd().openFile("/dev/tty", .{ .mode = .read_write }) catch |err| {
-        debug.print("openFile: {s}\n", .{@errorName(err)});
-        os.exit(1);
-        return undefined;
-    };
+pub fn main() !void {
+    var tty = try fs.cwd().openFile("/dev/tty", .{ .mode = .read_write });
     defer tty.close();
 
     var e = Editor{ .tty = tty, .og_termios = undefined };
-    enableRawMode(&e);
+    enableRawMode(&e) catch |err| {
+        try die(&e, "enableRawMode", err, 1);
+    };
 
     while (true) {
-        editorRefreshScreen(&e);
-        editorProcessKeypress(&e);
+        editorRefreshScreen() catch |err| {
+            try die(&e, "editorRefreshScreen", err, 1);
+        };
+        editorProcessKeypress(&e) catch |err| {
+            try die(&e, "editorProcessKeypress", err, 1);
+        };
     }
 }
