@@ -30,11 +30,31 @@ fn ctrlKey(k: u8) u8 {
 //
 
 fn clean(e: *Editor) void {
+    _ = os.write(os.linux.STDOUT_FILENO, "\x1b[2J") catch |err| {
+        debug.print("write: {s}\n", .{@errorName(err)});
+        os.exit(1);
+    };
+
+    _ = os.write(os.linux.STDOUT_FILENO, "\x1b[H") catch |err| {
+        debug.print("write: {s}\n", .{@errorName(err)});
+        os.exit(1);
+    };
+
     disableRawMode(e);
     os.exit(0);
 }
 
 fn die(e: *Editor, str: []const u8, err: anyerror, code: u8) void {
+    _ = os.write(os.linux.STDOUT_FILENO, "\x1b[2J") catch |wErr| {
+        debug.print("write: {s}\n", .{@errorName(wErr)});
+        os.exit(1);
+    };
+
+    _ = os.write(os.linux.STDOUT_FILENO, "\x1b[H") catch |wErr| {
+        debug.print("write: {s}\n", .{@errorName(wErr)});
+        os.exit(1);
+    };
+
     disableRawMode(e);
     debug.print("{s}: {s}\n", .{ str, @errorName(err) });
     os.exit(code);
@@ -82,10 +102,38 @@ fn editorReadKey(e: *Editor) u8 {
     var buf: [1]u8 = undefined;
     _ = e.tty.read(&buf) catch |err| {
         die(e, "read", err, 1);
-        return undefined;
     };
 
     return buf[0];
+}
+
+//
+// Output
+//
+
+fn editorDrawRows(e: *Editor) void {
+    var y: i8 = 0;
+    while (y < 24) : (y += 1) {
+        _ = os.write(os.linux.STDOUT_FILENO, "~\r\n") catch |err| {
+            die(e, "write", err, 1);
+        };
+    }
+}
+
+fn editorRefreshScreen(e: *Editor) void {
+    _ = os.write(os.linux.STDOUT_FILENO, "\x1b[2J") catch |err| {
+        die(e, "write", err, 1);
+    };
+
+    _ = os.write(os.linux.STDOUT_FILENO, "\x1b[H") catch |err| {
+        die(e, "write", err, 1);
+    };
+
+    editorDrawRows(e);
+
+    _ = os.write(os.linux.STDOUT_FILENO, "\x1b[H") catch |err| {
+        die(e, "write", err, 1);
+    };
 }
 
 //
@@ -118,6 +166,7 @@ pub fn main() void {
     enableRawMode(&e);
 
     while (true) {
+        editorRefreshScreen(&e);
         editorProcessKeypress(&e);
     }
 }
