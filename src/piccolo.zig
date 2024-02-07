@@ -30,15 +30,35 @@ fn ctrlKey(k: u8) u8 {
 //
 
 fn clean(e: *Editor) !void {
-    _ = try os.write(os.linux.STDOUT_FILENO, "\x1b[2J");
-    _ = try os.write(os.linux.STDOUT_FILENO, "\x1b[H");
+    _ = os.write(os.linux.STDOUT_FILENO, "\x1b[2J") catch |err| {
+        try disableRawMode(e);
+        debug.print("write: {s}\n", .{@errorName(err)});
+        os.exit(1);
+    };
+
+    _ = os.write(os.linux.STDOUT_FILENO, "\x1b[H") catch |err| {
+        try disableRawMode(e);
+        debug.print("write: {s}\n", .{@errorName(err)});
+        os.exit(1);
+    };
+
     try disableRawMode(e);
     os.exit(0);
 }
 
 fn die(e: *Editor, str: []const u8, err: anyerror, code: u8) !void {
-    _ = try os.write(os.linux.STDOUT_FILENO, "\x1b[2J");
-    _ = try os.write(os.linux.STDOUT_FILENO, "\x1b[H");
+    _ = os.write(os.linux.STDOUT_FILENO, "\x1b[2J") catch |werr| {
+        try disableRawMode(e);
+        debug.print("write: {s}\n", .{@errorName(werr)});
+        os.exit(1);
+    };
+
+    _ = os.write(os.linux.STDOUT_FILENO, "\x1b[H") catch |werr| {
+        try disableRawMode(e);
+        debug.print("write: {s}\n", .{@errorName(werr)});
+        os.exit(1);
+    };
+
     try disableRawMode(e);
 
     debug.print("{s}: {s}\n", .{ str, @errorName(err) });
