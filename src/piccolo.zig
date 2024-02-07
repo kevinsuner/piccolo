@@ -7,12 +7,15 @@ const debug = std.debug;
 const fs = std.fs;
 const os = std.os;
 const ascii = std.ascii;
+const mem = std.mem;
 
 //
 // Data
 //
 
 const Editor = struct {
+    screenrows: u16,
+    screencols: u16,
     tty: fs.File,
     og_termios: os.termios,
 };
@@ -101,21 +104,34 @@ fn editorReadKey(tty: fs.File) !u8 {
     return buf[0];
 }
 
+fn getWindowSize(e: *Editor) i16 {
+    var ws = mem.zeroes(os.linux.winsize);
+    if (os.linux.ioctl(os.linux.STDOUT_FILENO, os.linux.T.IOCGWINSZ, @intFromPtr(&ws)) == -1 or
+        ws.ws_col == 0)
+    {
+        return -1;
+    } else {
+        e.screenrows = ws.ws_row;
+        e.screencols = ws.ws_col;
+        return 0;
+    }
+}
+
 //
 // Output
 //
 
-fn editorDrawRows() !void {
+fn editorDrawRows(e: *Editor) !void {
     var y: i8 = 0;
-    while (y < 24) : (y += 1) {
+    while (y < e.screenrows) : (y += 1) {
         _ = try os.write(os.linux.STDOUT_FILENO, "~\r\n");
     }
 }
 
-fn editorRefreshScreen() !void {
+fn editorRefreshScreen(e: *Editor) !void {
     _ = try os.write(os.linux.STDOUT_FILENO, "\x1b[2J");
     _ = try os.write(os.linux.STDOUT_FILENO, "\x1b[H");
-    try editorDrawRows();
+    try editorDrawRows(e);
     _ = try os.write(os.linux.STDOUT_FILENO, "\x1b[H");
 }
 
@@ -137,17 +153,27 @@ fn editorProcessKeypress(e: *Editor) !void {
 // Init
 //
 
+fn initEditor(e: *Editor) !void {
+    if (getWindowSize(e) == -1) {
+        try disableRawMode(e);
+        debug.print("getWindowSize\n", .{});
+        os.exit(1);
+    }
+}
+
 pub fn main() !void {
     var tty = try fs.cwd().openFile("/dev/tty", .{ .mode = .read_write });
     defer tty.close();
 
-    var e = Editor{ .tty = tty, .og_termios = undefined };
+    var e = Editor{ .screenrows = undefined, .screencols = undefined, .tty = tty, .og_termios = undefined };
     enableRawMode(&e) catch |err| {
         try die(&e, "enableRawMode", err, 1);
     };
 
+    try initEditor(&e);
+
     while (true) {
-        editorRefreshScreen() catch |err| {
+        editorRefreshScreen(&e) catch |err| {
             try die(&e, "editorRefreshScreen", err, 1);
         };
         editorProcessKeypress(&e) catch |err| {
