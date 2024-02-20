@@ -1,6 +1,6 @@
-//
+// ==========================
 // Imports
-//
+// ==========================
 
 const std = @import("std");
 const debug = std.debug;
@@ -9,9 +9,9 @@ const os = std.os;
 const ascii = std.ascii;
 const mem = std.mem;
 
-//
+// ==========================
 // Data
-//
+// ==========================
 
 const Editor = struct {
     screenrows: u16,
@@ -20,17 +20,17 @@ const Editor = struct {
     og_termios: os.termios,
 };
 
-//
+// ==========================
 // Utilities
-//
+// ==========================
 
 fn ctrlKey(k: u8) u8 {
     return (k) & 0x1f;
 }
 
-//
+// ==========================
 // Terminal
-//
+// ==========================
 
 fn clean(e: *Editor) !void {
     _ = os.write(os.linux.STDOUT_FILENO, "\x1b[2J") catch |err| {
@@ -117,9 +117,9 @@ fn getWindowSize(e: *Editor) i16 {
     }
 }
 
-//
+// ==========================
 // Output
-//
+// ==========================
 
 fn editorDrawRows(e: *Editor) !void {
     var y: i8 = 0;
@@ -135,9 +135,9 @@ fn editorRefreshScreen(e: *Editor) !void {
     _ = try os.write(os.linux.STDOUT_FILENO, "\x1b[H");
 }
 
-//
+// ==========================
 // Input
-//
+// ==========================
 
 fn editorProcessKeypress(e: *Editor) !void {
     var c = try editorReadKey(e.tty);
@@ -149,9 +149,9 @@ fn editorProcessKeypress(e: *Editor) !void {
     }
 }
 
-//
+// ==========================
 // Init
-//
+// ==========================
 
 fn initEditor(e: *Editor) !void {
     if (getWindowSize(e) == -1) {
