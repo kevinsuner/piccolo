@@ -8,6 +8,7 @@ const fs = std.fs;
 const os = std.os;
 const ascii = std.ascii;
 const mem = std.mem;
+const linux = os.linux;
 
 // ==========================
 // Data
@@ -33,15 +34,15 @@ fn ctrlKey(k: u8) u8 {
 // ==========================
 
 fn clean(e: *Editor) !void {
-    _ = os.write(os.linux.STDOUT_FILENO, "\x1b[2J") catch |err| {
+    _ = os.write(os.STDOUT_FILENO, "\x1b[2J") catch |err| {
         try disableRawMode(e);
-        debug.print("write: {s}\n", .{@errorName(err)});
+        debug.print("os.write: {s}\n", .{@errorName(err)});
         os.exit(1);
     };
 
-    _ = os.write(os.linux.STDOUT_FILENO, "\x1b[H") catch |err| {
+    _ = os.write(os.STDOUT_FILENO, "\x1b[H") catch |err| {
         try disableRawMode(e);
-        debug.print("write: {s}\n", .{@errorName(err)});
+        debug.print("os.write: {s}\n", .{@errorName(err)});
         os.exit(1);
     };
 
@@ -49,22 +50,22 @@ fn clean(e: *Editor) !void {
     os.exit(0);
 }
 
-fn die(e: *Editor, str: []const u8, err: anyerror, code: u8) !void {
-    _ = os.write(os.linux.STDOUT_FILENO, "\x1b[2J") catch |werr| {
+fn die(e: *Editor, str: []const u8, erro: anyerror, code: u8) !void {
+    _ = os.write(os.STDOUT_FILENO, "\x1b[2J") catch |err| {
         try disableRawMode(e);
-        debug.print("write: {s}\n", .{@errorName(werr)});
+        debug.print("os.write: {s}\n", .{@errorName(err)});
         os.exit(1);
     };
 
-    _ = os.write(os.linux.STDOUT_FILENO, "\x1b[H") catch |werr| {
+    _ = os.write(os.STDOUT_FILENO, "\x1b[H") catch |err| {
         try disableRawMode(e);
-        debug.print("write: {s}\n", .{@errorName(werr)});
+        debug.print("os.write: {s}\n", .{@errorName(err)});
         os.exit(1);
     };
 
     try disableRawMode(e);
 
-    debug.print("{s}: {s}\n", .{ str, @errorName(err) });
+    debug.print("{s}: {s}\n", .{ str, @errorName(erro) });
     os.exit(code);
 }
 
@@ -75,22 +76,22 @@ fn disableRawMode(e: *Editor) !void {
 fn enableRawMode(e: *Editor) !void {
     e.og_termios = try os.tcgetattr(e.tty.handle);
     var raw = e.og_termios;
-
+    
     raw.iflag &= ~@as(
-        os.linux.tcflag_t,
-        os.linux.IXON | os.linux.ICRNL | os.linux.BRKINT | os.linux.INPCK | os.linux.ISTRIP,
+        os.tcflag_t,
+        linux.IXON | linux.ICRNL | linux.BRKINT | linux.INPCK | linux.ISTRIP,
     );
     raw.oflag &= ~@as(
-        os.linux.tcflag_t,
-        os.linux.OPOST,
+        os.tcflag_t,
+        linux.OPOST,
     );
     raw.cflag |= @as(
-        os.linux.tcflag_t,
-        os.linux.CS8,
+        os.tcflag_t,
+        linux.CS8,
     );
     raw.lflag &= ~@as(
-        os.linux.tcflag_t,
-        os.linux.ECHO | os.linux.ICANON | os.linux.ISIG | os.linux.IEXTEN,
+        os.tcflag_t,
+        linux.ECHO | linux.ICANON | linux.ISIG | linux.IEXTEN,
     );
     raw.cc[os.system.V.MIN] = 0;
     raw.cc[os.system.V.TIME] = 1;
@@ -105,10 +106,8 @@ fn editorReadKey(tty: fs.File) !u8 {
 }
 
 fn getWindowSize(e: *Editor) i16 {
-    var ws = mem.zeroes(os.linux.winsize);
-    if (os.linux.ioctl(os.linux.STDOUT_FILENO, os.linux.T.IOCGWINSZ, @intFromPtr(&ws)) == -1 or
-        ws.ws_col == 0)
-    {
+    var ws = mem.zeroes(linux.winsize);
+    if (linux.ioctl(os.STDOUT_FILENO, linux.T.IOCGWINSZ, @intFromPtr(&ws)) == -1 or ws.ws_col == 0) {
         return -1;
     } else {
         e.screenrows = ws.ws_row;
@@ -124,15 +123,15 @@ fn getWindowSize(e: *Editor) i16 {
 fn editorDrawRows(e: *Editor) !void {
     var y: i8 = 0;
     while (y < e.screenrows) : (y += 1) {
-        _ = try os.write(os.linux.STDOUT_FILENO, "~\r\n");
+        _ = try os.write(os.STDOUT_FILENO, "~\r\n");
     }
 }
 
 fn editorRefreshScreen(e: *Editor) !void {
-    _ = try os.write(os.linux.STDOUT_FILENO, "\x1b[2J");
-    _ = try os.write(os.linux.STDOUT_FILENO, "\x1b[H");
+    _ = try os.write(os.STDOUT_FILENO, "\x1b[2J");
+    _ = try os.write(os.STDOUT_FILENO, "\x1b[H");
     try editorDrawRows(e);
-    _ = try os.write(os.linux.STDOUT_FILENO, "\x1b[H");
+    _ = try os.write(os.STDOUT_FILENO, "\x1b[H");
 }
 
 // ==========================
