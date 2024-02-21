@@ -9,6 +9,8 @@ const os = std.os;
 const ascii = std.ascii;
 const mem = std.mem;
 const linux = os.linux;
+const fmt = std.fmt;
+const heap = std.heap;
 
 // ==========================
 // Data
@@ -19,6 +21,7 @@ const Editor = struct {
     screencols: u16,
     tty: fs.File,
     og_termios: os.termios,
+    allocator: mem.Allocator,
 };
 
 // ==========================
@@ -105,10 +108,45 @@ fn editorReadKey(tty: fs.File) !u8 {
     return buf[0];
 }
 
-fn getWindowSize(e: *Editor) i16 {
+fn getCursorPosition(e: *Editor) !i16 {
+    var buf = std.ArrayList(u8).init(e.allocator);
+    defer buf.deinit();
+
+    var wsize = try os.write(os.STDOUT_FILENO, "\x1b[6n");
+    if (wsize != 4) return -1;
+
+    while (true) {
+        var char: [1]u8 = undefined;
+        var rsize = try os.read(os.STDOUT_FILENO, &char);
+        if (rsize != 1) break;
+
+        if (char[0] == '\x1b') continue;
+        if (char[0] == 'R') break;
+        try buf.append(char[0]);
+    }
+
+    var i: u8 = 0;
+    var numbers: [2]u16 = undefined;
+    var tokenizer = mem.tokenize(u8, buf.items, ";[");
+    while (tokenizer.next()) |token| {
+        const number = try fmt.parseInt(u16, token, 10);
+        numbers[i] = number;
+        i += 1;
+    }
+
+    e.screenrows = numbers[0];
+    e.screencols = numbers[1];
+    
+    _ = try editorReadKey(e.tty);
+    return -1;
+}
+
+fn getWindowSize(e: *Editor) !i16 {
     var ws = mem.zeroes(linux.winsize);
     if (linux.ioctl(os.STDOUT_FILENO, linux.T.IOCGWINSZ, @intFromPtr(&ws)) == -1 or ws.ws_col == 0) {
-        return -1;
+        var size = try os.write(os.STDOUT_FILENO, "\x1b[999C\x1b[999B");
+        if (size != 12) return -1;
+        return try getCursorPosition(e);
     } else {
         e.screenrows = ws.ws_row;
         e.screencols = ws.ws_col;
@@ -123,7 +161,11 @@ fn getWindowSize(e: *Editor) i16 {
 fn editorDrawRows(e: *Editor) !void {
     var y: i8 = 0;
     while (y < e.screenrows) : (y += 1) {
-        _ = try os.write(os.STDOUT_FILENO, "~\r\n");
+        _ = try os.write(os.STDOUT_FILENO, "~");
+
+        if (y < e.screenrows - 1) {
+            _ = try os.write(os.STDOUT_FILENO, "\r\n");
+        }
     }
 }
 
@@ -153,7 +195,8 @@ fn editorProcessKeypress(e: *Editor) !void {
 // ==========================
 
 fn initEditor(e: *Editor) !void {
-    if (getWindowSize(e) == -1) {
+    var ws = try getWindowSize(e);
+    if (ws == -1) {
         try disableRawMode(e);
         debug.print("getWindowSize\n", .{});
         os.exit(1);
@@ -161,10 +204,24 @@ fn initEditor(e: *Editor) !void {
 }
 
 pub fn main() !void {
+    var gpa = heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+    defer {
+        const deinit_status = gpa.deinit();
+        if (deinit_status == .leak) @panic("leak detected");
+    }
+
     var tty = try fs.cwd().openFile("/dev/tty", .{ .mode = .read_write });
     defer tty.close();
 
-    var e = Editor{ .screenrows = undefined, .screencols = undefined, .tty = tty, .og_termios = undefined };
+    var e = Editor{
+        .screenrows = undefined, 
+        .screencols = undefined, 
+        .tty = tty, 
+        .og_termios = undefined,
+        .allocator = allocator,
+    };
+    
     enableRawMode(&e) catch |err| {
         try die(&e, "enableRawMode", err, 1);
     };
