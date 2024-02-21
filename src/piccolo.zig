@@ -1,6 +1,6 @@
-// ==========================
+// ========================================================
 // Imports
-// ==========================
+// ========================================================
 
 const std = @import("std");
 const debug = std.debug;
@@ -12,9 +12,9 @@ const linux = os.linux;
 const fmt = std.fmt;
 const heap = std.heap;
 
-// ==========================
+// ========================================================
 // Data
-// ==========================
+// ========================================================
 
 const Editor = struct {
     screencols: u16,
@@ -24,17 +24,17 @@ const Editor = struct {
     allocator: mem.Allocator,
 };
 
-// ==========================
+// ========================================================
 // Utilities
-// ==========================
+// ========================================================
 
 fn ctrlKey(k: u8) u8 {
     return (k) & 0x1f;
 }
 
-// ==========================
+// ========================================================
 // Terminal
-// ==========================
+// ========================================================
 
 fn clean(e: *Editor) !void {
     _ = os.write(os.STDOUT_FILENO, "\x1b[2J") catch |err| {
@@ -67,7 +67,6 @@ fn die(e: *Editor, str: []const u8, erro: anyerror, code: u8) !void {
     };
 
     try disableRawMode(e);
-
     debug.print("{s}: {s}\n", .{ str, @errorName(erro) });
     os.exit(code);
 }
@@ -154,9 +153,9 @@ fn getWindowSize(e: *Editor) !i16 {
     }
 }
 
-// ==========================
+// ========================================================
 // Output
-// ==========================
+// ========================================================
 
 fn editorDrawRows(e: *Editor) !void {
     var i: u8 = 0;
@@ -173,23 +172,21 @@ fn editorRefreshScreen(e: *Editor) !void {
     _ = try os.write(os.STDOUT_FILENO, "\x1b[H");
 }
 
-// ==========================
+// ========================================================
 // Input
-// ==========================
+// ========================================================
 
 fn editorProcessKeypress(e: *Editor) !void {
     var c = try editorReadKey(e.tty);
     switch (c) {
-        ctrlKey('q') => {
-            try clean(e);
-        },
+        ctrlKey('q') => try clean(e),
         else => {},
     }
 }
 
-// ==========================
+// ========================================================
 // Init
-// ==========================
+// ========================================================
 
 fn initEditor(e: *Editor) !void {
     var ws = try getWindowSize(e);
@@ -212,25 +209,18 @@ pub fn main() !void {
     defer tty.close();
 
     var e = Editor{
-        .screenrows = undefined, 
         .screencols = undefined, 
+        .screenrows = undefined, 
         .tty = tty, 
         .og_termios = undefined,
         .allocator = allocator,
     };
     
-    enableRawMode(&e) catch |err| {
-        try die(&e, "enableRawMode", err, 1);
-    };
-
+    enableRawMode(&e) catch |err| try die(&e, "enableRawMode", err, 1);
     try initEditor(&e);
 
     while (true) {
-        editorRefreshScreen(&e) catch |err| {
-            try die(&e, "editorRefreshScreen", err, 1);
-        };
-        editorProcessKeypress(&e) catch |err| {
-            try die(&e, "editorProcessKeypress", err, 1);
-        };
+        editorRefreshScreen(&e) catch |err| try die(&e, "editorRefreshScreen", err, 1);
+        editorProcessKeypress(&e) catch |err| try die(&e, "editorProcessKeypress", err, 1);
     }
 }
