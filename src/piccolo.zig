@@ -17,8 +17,8 @@ const heap = std.heap;
 // ==========================
 
 const Editor = struct {
-    screenrows: u16,
     screencols: u16,
+    screenrows: u16,
     tty: fs.File,
     og_termios: os.termios,
     allocator: mem.Allocator,
@@ -134,11 +134,11 @@ fn getCursorPosition(e: *Editor) !i16 {
         i += 1;
     }
 
-    e.screenrows = numbers[0];
-    e.screencols = numbers[1];
+    e.screencols = numbers[0];
+    e.screenrows = numbers[1];
     
     _ = try editorReadKey(e.tty);
-    return -1;
+    return 0;
 }
 
 fn getWindowSize(e: *Editor) !i16 {
@@ -148,8 +148,8 @@ fn getWindowSize(e: *Editor) !i16 {
         if (size != 12) return -1;
         return try getCursorPosition(e);
     } else {
-        e.screenrows = ws.ws_row;
         e.screencols = ws.ws_col;
+        e.screenrows = ws.ws_row;
         return 0;
     }
 }
@@ -159,13 +159,10 @@ fn getWindowSize(e: *Editor) !i16 {
 // ==========================
 
 fn editorDrawRows(e: *Editor) !void {
-    var y: i8 = 0;
-    while (y < e.screenrows) : (y += 1) {
+    var i: u8 = 0;
+    while (i < e.screenrows) : (i += 1) {
         _ = try os.write(os.STDOUT_FILENO, "~");
-
-        if (y < e.screenrows - 1) {
-            _ = try os.write(os.STDOUT_FILENO, "\r\n");
-        }
+        if (i < e.screenrows - 1) _ = try os.write(os.STDOUT_FILENO, "\r\n");
     }
 }
 
