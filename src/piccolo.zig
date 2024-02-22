@@ -22,6 +22,7 @@ const Editor = struct {
     tty: fs.File,
     og_termios: os.termios,
     allocator: mem.Allocator,
+    write_buf: std.ArrayList(u8),
 };
 
 // ========================================================
@@ -160,16 +161,24 @@ fn getWindowSize(e: *Editor) !i16 {
 fn editorDrawRows(e: *Editor) !void {
     var i: u8 = 0;
     while (i < e.screenrows) : (i += 1) {
-        _ = try os.write(os.STDOUT_FILENO, "~");
-        if (i < e.screenrows - 1) _ = try os.write(os.STDOUT_FILENO, "\r\n");
+        _ = try e.write_buf.writer().write("~");
+        _ = try e.write_buf.writer().write("\x1b[K");
+        if (i < e.screenrows - 1) _ = try e.write_buf.writer().write("\r\n");
     }
 }
 
 fn editorRefreshScreen(e: *Editor) !void {
-    _ = try os.write(os.STDOUT_FILENO, "\x1b[2J");
-    _ = try os.write(os.STDOUT_FILENO, "\x1b[H");
+    e.write_buf = std.ArrayList(u8).init(e.allocator);
+    defer e.write_buf.deinit();
+
+    _ = try e.write_buf.writer().write("\x1b[?25l");
+    _ = try e.write_buf.writer().write("\x1b[H");
+    
     try editorDrawRows(e);
-    _ = try os.write(os.STDOUT_FILENO, "\x1b[H");
+    
+    _ = try e.write_buf.writer().write("\x1b[H");
+    _ = try e.write_buf.writer().write("\x1b[?25h");
+    _ = try os.write(os.STDOUT_FILENO, e.write_buf.items);
 }
 
 // ========================================================
@@ -214,6 +223,7 @@ pub fn main() !void {
         .tty = tty, 
         .og_termios = undefined,
         .allocator = allocator,
+        .write_buf = undefined,
     };
     
     enableRawMode(&e) catch |err| try die(&e, "enableRawMode", err, 1);
