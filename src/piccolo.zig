@@ -34,6 +34,7 @@ const EditorKey = enum(u16) {
     arrow_right,
     arrow_up,
     arrow_down,
+    del_key,
     home_key,
     end_key,
     page_up,
@@ -137,6 +138,7 @@ fn editorReadKey(tty: fs.File) !u16 {
                 if (seq2[0] == '~') {
                     switch (seq1[0]) {
                         '1' => return @intFromEnum(EditorKey.home_key),
+                        '3' => return @intFromEnum(EditorKey.del_key),
                         '4' => return @intFromEnum(EditorKey.end_key),
                         '5' => return @intFromEnum(EditorKey.page_up),
                         '6' => return @intFromEnum(EditorKey.page_down),
