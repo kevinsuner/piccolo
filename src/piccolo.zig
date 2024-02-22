@@ -235,10 +235,18 @@ fn editorRefreshScreen(e: *Editor) !void {
 
 fn editorMoveCursor(key: u16, e: *Editor) void {
     switch (key) {
-        @intFromEnum(EditorKey.arrow_left) => e.cursor_x -= 1,
-        @intFromEnum(EditorKey.arrow_right) => e.cursor_x += 1,
-        @intFromEnum(EditorKey.arrow_up) => e.cursor_y -= 1,
-        @intFromEnum(EditorKey.arrow_down) => e.cursor_y += 1,
+        @intFromEnum(EditorKey.arrow_left) => {
+            if (e.cursor_x != 0) e.cursor_x -= 1;
+        },
+        @intFromEnum(EditorKey.arrow_right) => {
+            if (e.cursor_x != e.screencols - 1) e.cursor_x += 1;
+        },
+        @intFromEnum(EditorKey.arrow_up) => {
+            if (e.cursor_y != 0) e.cursor_y -= 1;
+        },
+        @intFromEnum(EditorKey.arrow_down) => {
+            if (e.cursor_y != e.screenrows - 1) e.cursor_y += 1;
+        },
         else => {},
     }
 }
