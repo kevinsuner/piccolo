@@ -34,6 +34,8 @@ const EditorKey = enum(u16) {
     arrow_right,
     arrow_up,
     arrow_down,
+    page_up,
+    page_down,
 };
 
 // ========================================================
@@ -120,18 +122,31 @@ fn editorReadKey(tty: fs.File) !u16 {
     if (buf[0] == '\x1b') {
         var seq0: [1]u8 = undefined;
         var seq1: [1]u8 = undefined;
-        
         var seq0_size = try os.read(os.STDOUT_FILENO, &seq0);
         var seq1_size = try os.read(os.STDOUT_FILENO, &seq1);
         if (seq0_size != 1 or seq1_size != 1) return '\x1b';
 
         if (seq0[0] == '[') {
-            switch (seq1[0]) {
-                'A' => return @intFromEnum(EditorKey.arrow_up),
-                'B' => return @intFromEnum(EditorKey.arrow_down),
-                'C' => return @intFromEnum(EditorKey.arrow_right),
-                'D' => return @intFromEnum(EditorKey.arrow_left),
-                else => {},
+            if (seq1[0] >= '0' and seq1[0] <= '9') {
+                var seq2: [1]u8 = undefined; 
+                var seq2_size = try os.read(os.STDOUT_FILENO, &seq2);
+                if (seq2_size != 1) return '\x1b';
+
+                if (seq2[0] == '~') {
+                    switch (seq1[0]) {
+                        '5' => return @intFromEnum(EditorKey.page_up),
+                        '6' => return @intFromEnum(EditorKey.page_down),
+                        else => {},
+                    }
+                }
+            } else {
+                switch (seq1[0]) {
+                    'A' => return @intFromEnum(EditorKey.arrow_up),
+                    'B' => return @intFromEnum(EditorKey.arrow_down),
+                    'C' => return @intFromEnum(EditorKey.arrow_right),
+                    'D' => return @intFromEnum(EditorKey.arrow_left),
+                    else => {},
+                }
             }
         }
 
@@ -255,6 +270,18 @@ fn editorProcessKeypress(e: *Editor) !void {
     var c = try editorReadKey(e.tty);
     switch (c) {
         ctrlKey('q') => try clean(e),
+
+        @intFromEnum(EditorKey.page_up),
+        @intFromEnum(EditorKey.page_down) => {
+            var times = e.screenrows;
+            while (times > 0) : (times -= 1) {
+                if (c == @intFromEnum(EditorKey.page_up)) {
+                    editorMoveCursor(@intFromEnum(EditorKey.arrow_up), e);
+                } else {
+                    editorMoveCursor(@intFromEnum(EditorKey.arrow_down), e);
+                }
+            }
+        },
         
         @intFromEnum(EditorKey.arrow_left),
         @intFromEnum(EditorKey.arrow_right),
