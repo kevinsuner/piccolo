@@ -16,6 +16,7 @@ const heap = std.heap;
 // Data
 // ========================================================
 
+const PICCOLO_VERSION = "0.1";
 const Editor = struct {
     screencols: u16,
     screenrows: u16,
@@ -159,11 +160,24 @@ fn getWindowSize(e: *Editor) !i16 {
 // ========================================================
 
 fn editorDrawRows(e: *Editor) !void {
-    var i: u8 = 0;
-    while (i < e.screenrows) : (i += 1) {
-        _ = try e.write_buf.writer().write("~");
+    var y: u8 = 0;
+    while (y < e.screenrows) : (y += 1) {
+        if (y == e.screenrows / 3) {
+            var welcome_msg = try fmt.allocPrint(e.allocator, "Piccolo Editor -- Version {s}", .{PICCOLO_VERSION});
+            var padding: u64 = (e.screencols - welcome_msg.len) / 2;
+            if (padding > 0) {
+                _ = try e.write_buf.writer().write("~");
+                padding -= 1;
+            }
+
+            while (padding > 0) : (padding -= 1) _ = try e.write_buf.writer().write(" ");
+            _ = try e.write_buf.writer().write(welcome_msg);
+        } else {
+            _ = try e.write_buf.writer().write("~");
+        }
+
         _ = try e.write_buf.writer().write("\x1b[K");
-        if (i < e.screenrows - 1) _ = try e.write_buf.writer().write("\r\n");
+        if (y < e.screenrows - 1) _ = try e.write_buf.writer().write("\r\n");
     }
 }
 
