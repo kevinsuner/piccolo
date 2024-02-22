@@ -17,6 +17,7 @@ const heap = std.heap;
 // ========================================================
 
 const PICCOLO_VERSION = "0.1";
+
 const Editor = struct {
     cursor_x: u16,
     cursor_y: u16,
@@ -26,6 +27,13 @@ const Editor = struct {
     og_termios: os.termios,
     allocator: mem.Allocator,
     write_buf: std.ArrayList(u8),
+};
+
+const EditorKey = enum(u16) {
+    arrow_left = 1000,
+    arrow_right,
+    arrow_up,
+    arrow_down,
 };
 
 // ========================================================
@@ -105,10 +113,32 @@ fn enableRawMode(e: *Editor) !void {
     try os.tcsetattr(e.tty.handle, .FLUSH, raw);
 }
 
-fn editorReadKey(tty: fs.File) !u8 {
+fn editorReadKey(tty: fs.File) !u16 {
     var buf: [1]u8 = undefined;
     _ = try tty.read(&buf);
-    return buf[0];
+
+    if (buf[0] == '\x1b') {
+        var seq0: [1]u8 = undefined;
+        var seq1: [1]u8 = undefined;
+        
+        var seq0_size = try os.read(os.STDOUT_FILENO, &seq0);
+        var seq1_size = try os.read(os.STDOUT_FILENO, &seq1);
+        if (seq0_size != 1 or seq1_size != 1) return '\x1b';
+
+        if (seq0[0] == '[') {
+            switch (seq1[0]) {
+                'A' => return @intFromEnum(EditorKey.arrow_up),
+                'B' => return @intFromEnum(EditorKey.arrow_down),
+                'C' => return @intFromEnum(EditorKey.arrow_right),
+                'D' => return @intFromEnum(EditorKey.arrow_left),
+                else => {},
+            }
+        }
+
+        return '\x1b';
+    } else {
+        return @as(u16, buf[0]);
+    }
 }
 
 fn getCursorPosition(e: *Editor) !i16 {
@@ -203,12 +233,12 @@ fn editorRefreshScreen(e: *Editor) !void {
 // Input
 // ========================================================
 
-fn editorMoveCursor(key: u8, e: *Editor) void {
+fn editorMoveCursor(key: u16, e: *Editor) void {
     switch (key) {
-        'a' => e.cursor_x -= 1,
-        'd' => e.cursor_x += 1,
-        'w' => e.cursor_y -= 1,
-        's' => e.cursor_y += 1,
+        @intFromEnum(EditorKey.arrow_left) => e.cursor_x -= 1,
+        @intFromEnum(EditorKey.arrow_right) => e.cursor_x += 1,
+        @intFromEnum(EditorKey.arrow_up) => e.cursor_y -= 1,
+        @intFromEnum(EditorKey.arrow_down) => e.cursor_y += 1,
         else => {},
     }
 }
@@ -217,7 +247,11 @@ fn editorProcessKeypress(e: *Editor) !void {
     var c = try editorReadKey(e.tty);
     switch (c) {
         ctrlKey('q') => try clean(e),
-        'a', 'd', 'w', 's' => editorMoveCursor(c, e),
+        
+        @intFromEnum(EditorKey.arrow_left),
+        @intFromEnum(EditorKey.arrow_right),
+        @intFromEnum(EditorKey.arrow_up),
+        @intFromEnum(EditorKey.arrow_down) => editorMoveCursor(c, e),
         else => {},
     }
 }
