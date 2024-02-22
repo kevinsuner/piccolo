@@ -34,6 +34,8 @@ const EditorKey = enum(u16) {
     arrow_right,
     arrow_up,
     arrow_down,
+    home_key,
+    end_key,
     page_up,
     page_down,
 };
@@ -134,8 +136,12 @@ fn editorReadKey(tty: fs.File) !u16 {
 
                 if (seq2[0] == '~') {
                     switch (seq1[0]) {
+                        '1' => return @intFromEnum(EditorKey.home_key),
+                        '4' => return @intFromEnum(EditorKey.end_key),
                         '5' => return @intFromEnum(EditorKey.page_up),
                         '6' => return @intFromEnum(EditorKey.page_down),
+                        '7' => return @intFromEnum(EditorKey.home_key),
+                        '8' => return @intFromEnum(EditorKey.end_key),
                         else => {},
                     }
                 }
@@ -145,8 +151,16 @@ fn editorReadKey(tty: fs.File) !u16 {
                     'B' => return @intFromEnum(EditorKey.arrow_down),
                     'C' => return @intFromEnum(EditorKey.arrow_right),
                     'D' => return @intFromEnum(EditorKey.arrow_left),
+                    'H' => return @intFromEnum(EditorKey.home_key),
+                    'F' => return @intFromEnum(EditorKey.end_key),
                     else => {},
                 }
+            }
+        } else if (seq0[0] == 'O') {
+            switch (seq1[0]) {
+                'H' => return @intFromEnum(EditorKey.home_key),
+                'F' => return @intFromEnum(EditorKey.end_key),
+                else => {},
             }
         }
 
@@ -270,6 +284,9 @@ fn editorProcessKeypress(e: *Editor) !void {
     var c = try editorReadKey(e.tty);
     switch (c) {
         ctrlKey('q') => try clean(e),
+
+        @intFromEnum(EditorKey.home_key) => e.cursor_x = 0,
+        @intFromEnum(EditorKey.end_key) => e.cursor_x = e.screencols - 1,
 
         @intFromEnum(EditorKey.page_up),
         @intFromEnum(EditorKey.page_down) => {
