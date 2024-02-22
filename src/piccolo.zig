@@ -18,6 +18,8 @@ const heap = std.heap;
 
 const PICCOLO_VERSION = "0.1";
 const Editor = struct {
+    cursor_x: u16,
+    cursor_y: u16,
     screencols: u16,
     screenrows: u16,
     tty: fs.File,
@@ -189,8 +191,10 @@ fn editorRefreshScreen(e: *Editor) !void {
     _ = try e.write_buf.writer().write("\x1b[H");
     
     try editorDrawRows(e);
+
+    var buf = try fmt.allocPrint(e.allocator, "\x1b[{d};{d}H", .{e.cursor_y + 1, e.cursor_x + 1});
+    _ = try e.write_buf.writer().write(buf);
     
-    _ = try e.write_buf.writer().write("\x1b[H");
     _ = try e.write_buf.writer().write("\x1b[?25h");
     _ = try os.write(os.STDOUT_FILENO, e.write_buf.items);
 }
@@ -199,10 +203,21 @@ fn editorRefreshScreen(e: *Editor) !void {
 // Input
 // ========================================================
 
+fn editorMoveCursor(key: u8, e: *Editor) void {
+    switch (key) {
+        'a' => e.cursor_x -= 1,
+        'd' => e.cursor_x += 1,
+        'w' => e.cursor_y -= 1,
+        's' => e.cursor_y += 1,
+        else => {},
+    }
+}
+
 fn editorProcessKeypress(e: *Editor) !void {
     var c = try editorReadKey(e.tty);
     switch (c) {
         ctrlKey('q') => try clean(e),
+        'a', 'd', 'w', 's' => editorMoveCursor(c, e),
         else => {},
     }
 }
@@ -212,6 +227,9 @@ fn editorProcessKeypress(e: *Editor) !void {
 // ========================================================
 
 fn initEditor(e: *Editor) !void {
+    e.cursor_x = 0;
+    e.cursor_y = 0;
+
     var ws = try getWindowSize(e);
     if (ws == -1) {
         try disableRawMode(e);
@@ -232,6 +250,8 @@ pub fn main() !void {
     defer tty.close();
 
     var e = Editor{
+        .cursor_x = undefined,
+        .cursor_y = undefined,
         .screencols = undefined, 
         .screenrows = undefined, 
         .tty = tty, 
