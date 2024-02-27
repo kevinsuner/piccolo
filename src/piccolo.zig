@@ -11,6 +11,7 @@ const mem = std.mem;
 const linux = os.linux;
 const fmt = std.fmt;
 const heap = std.heap;
+const io = std.io;
 
 // ========================================================
 // Data
@@ -18,11 +19,18 @@ const heap = std.heap;
 
 const PICCOLO_VERSION = "0.1";
 
+const EditorRow = struct {
+    size: usize,
+    chars: []u8,
+};
+
 const Editor = struct {
     cursor_x: u16,
     cursor_y: u16,
     screencols: u16,
     screenrows: u16,
+    num_rows: u16,
+    row: EditorRow,
     tty: fs.File,
     og_termios: os.termios,
     allocator: mem.Allocator,
@@ -219,24 +227,58 @@ fn getWindowSize(e: *Editor) !i16 {
 }
 
 // ========================================================
+// File I/O
+// ========================================================
+
+fn editorOpen(e: *Editor) !void {
+    var file = try fs.cwd().openFile("example.txt", .{ .mode = .read_write });
+    defer file.close();
+
+    var buf_reader = io.bufferedReader(file.reader());
+    const reader = buf_reader.reader();
+
+    var line = std.ArrayList(u8).init(e.allocator);
+    defer line.deinit();
+
+    const writer = line.writer();
+    while (reader.streamUntilDelimiter(writer, '\n', null)) {
+        defer line.clearRetainingCapacity();
+        if (e.num_rows < 1) {
+            e.row.size = line.items.len;
+            e.row.chars = try fmt.allocPrint(e.allocator, "{s}\u{0000}", .{line.items});
+            e.num_rows = 1;
+        }
+    } else |err| switch (err) {
+        error.EndOfStream => {},
+        else => return err,
+    }
+}
+
+// ========================================================
 // Output
 // ========================================================
 
 fn editorDrawRows(e: *Editor) !void {
     var y: u8 = 0;
     while (y < e.screenrows) : (y += 1) {
-        if (y == e.screenrows / 3) {
-            var welcome_msg = try fmt.allocPrint(e.allocator, "Piccolo Editor -- Version {s}", .{PICCOLO_VERSION});
-            var padding: u64 = (e.screencols - welcome_msg.len) / 2;
-            if (padding > 0) {
-                _ = try e.write_buf.writer().write("~");
-                padding -= 1;
-            }
+        if (y >= e.num_rows) {
+            if (y == e.screenrows / 3) {
+                var welcome_msg = try fmt.allocPrint(e.allocator, "Piccolo Editor -- Version {s}", .{PICCOLO_VERSION});
+                var padding: u64 = (e.screencols - welcome_msg.len) / 2;
+                if (padding > 0) {
+                    _ = try e.write_buf.writer().write("~");
+                    padding -= 1;
+                }
 
-            while (padding > 0) : (padding -= 1) _ = try e.write_buf.writer().write(" ");
-            _ = try e.write_buf.writer().write(welcome_msg);
+                while (padding > 0) : (padding -= 1) _ = try e.write_buf.writer().write(" ");
+                _ = try e.write_buf.writer().write(welcome_msg);
+            } else {
+                _ = try e.write_buf.writer().write("~");
+            }
         } else {
-            _ = try e.write_buf.writer().write("~");
+            var len = e.row.size;
+            if (len > e.screencols) len = e.screencols;
+            _ = try e.write_buf.writer().write(e.row.chars);
         }
 
         _ = try e.write_buf.writer().write("\x1b[K");
@@ -317,6 +359,7 @@ fn editorProcessKeypress(e: *Editor) !void {
 fn initEditor(e: *Editor) !void {
     e.cursor_x = 0;
     e.cursor_y = 0;
+    e.num_rows = 0;
 
     var ws = try getWindowSize(e);
     if (ws == -1) {
@@ -341,7 +384,9 @@ pub fn main() !void {
         .cursor_x = undefined,
         .cursor_y = undefined,
         .screencols = undefined, 
-        .screenrows = undefined, 
+        .screenrows = undefined,
+        .num_rows = undefined,
+        .row = undefined,
         .tty = tty, 
         .og_termios = undefined,
         .allocator = allocator,
@@ -350,6 +395,7 @@ pub fn main() !void {
     
     enableRawMode(&e) catch |err| try die(&e, "enableRawMode", err, 1);
     try initEditor(&e);
+    try editorOpen(&e);
 
     while (true) {
         editorRefreshScreen(&e) catch |err| try die(&e, "editorRefreshScreen", err, 1);
