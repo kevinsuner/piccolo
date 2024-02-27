@@ -12,6 +12,7 @@ const linux = os.linux;
 const fmt = std.fmt;
 const heap = std.heap;
 const io = std.io;
+const process = std.process;
 
 // ========================================================
 // Data
@@ -230,8 +231,8 @@ fn getWindowSize(e: *Editor) !i16 {
 // File I/O
 // ========================================================
 
-fn editorOpen(e: *Editor) !void {
-    var file = try fs.cwd().openFile("example.txt", .{ .mode = .read_write });
+fn editorOpen(e: *Editor, path: []const u8) !void {
+    var file = try fs.cwd().openFile(path, .{ .mode = .read_write });
     defer file.close();
 
     var buf_reader = io.bufferedReader(file.reader());
@@ -242,7 +243,6 @@ fn editorOpen(e: *Editor) !void {
 
     const writer = line.writer();
     while (reader.streamUntilDelimiter(writer, '\n', null)) {
-        defer line.clearRetainingCapacity();
         if (e.num_rows < 1) {
             e.row.size = line.items.len;
             e.row.chars = try fmt.allocPrint(e.allocator, "{s}\u{0000}", .{line.items});
@@ -376,9 +376,12 @@ pub fn main() !void {
         const deinit_status = gpa.deinit();
         if (deinit_status == .leak) @panic("leak detected");
     }
-
+    
     var tty = try fs.cwd().openFile("/dev/tty", .{ .mode = .read_write });
     defer tty.close();
+
+    var args = try process.argsAlloc(allocator);
+    defer process.argsFree(allocator, args);
 
     var e = Editor{
         .cursor_x = undefined,
@@ -395,7 +398,7 @@ pub fn main() !void {
     
     enableRawMode(&e) catch |err| try die(&e, "enableRawMode", err, 1);
     try initEditor(&e);
-    try editorOpen(&e);
+    try editorOpen(&e, args[1]);
 
     while (true) {
         editorRefreshScreen(&e) catch |err| try die(&e, "editorRefreshScreen", err, 1);
