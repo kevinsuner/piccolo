@@ -28,6 +28,7 @@ const EditorRow = struct {
 const Editor = struct {
     cursor_x: u16,
     cursor_y: u16,
+    row_offset: u16,
     screencols: u16,
     screenrows: u16,
     num_rows: u16,
@@ -265,10 +266,21 @@ fn editorOpen(e: *Editor, path: []const u8) !void {
 // Output
 // ========================================================
 
+fn editorScroll(e: *Editor) void {
+    if (e.cursor_y < e.row_offset) {
+        e.row_offset = e.cursor_y;
+    }
+
+    if (e.cursor_y >= e.row_offset + e.screenrows) {
+        e.row_offset = e.cursor_y - e.screenrows + 1;
+    }
+}
+
 fn editorDrawRows(e: *Editor) !void {
     var y: u8 = 0;
     while (y < e.screenrows) : (y += 1) {
-        if (y >= e.num_rows) {
+        var file_row = y + e.row_offset;
+        if (file_row >= e.num_rows) {
             if (e.num_rows == 0 and y == e.screenrows / 3) {
                 var welcome_msg = try fmt.allocPrint(e.allocator, "Piccolo Editor -- Version {s}", .{PICCOLO_VERSION});
                 var padding: u64 = (e.screencols - welcome_msg.len) / 2;
@@ -283,9 +295,9 @@ fn editorDrawRows(e: *Editor) !void {
                 _ = try e.write_buf.writer().write("~");
             }
         } else {
-            var len = e.row.items[y].size;
+            var len = e.row.items[file_row].size;
             if (len > e.screencols) len = e.screencols;
-            _ = try e.write_buf.writer().write(e.row.items[y].chars);
+            _ = try e.write_buf.writer().write(e.row.items[file_row].chars);
         }
 
         _ = try e.write_buf.writer().write("\x1b[K");
@@ -294,6 +306,8 @@ fn editorDrawRows(e: *Editor) !void {
 }
 
 fn editorRefreshScreen(e: *Editor) !void {
+    editorScroll(e);
+
     e.write_buf = std.ArrayList(u8).init(e.allocator);
     defer e.write_buf.deinit();
 
@@ -302,7 +316,7 @@ fn editorRefreshScreen(e: *Editor) !void {
     
     try editorDrawRows(e);
 
-    var buf = try fmt.allocPrint(e.allocator, "\x1b[{d};{d}H", .{e.cursor_y + 1, e.cursor_x + 1});
+    var buf = try fmt.allocPrint(e.allocator, "\x1b[{d};{d}H", .{(e.cursor_y - e.row_offset) + 1, e.cursor_x + 1});
     _ = try e.write_buf.writer().write(buf);
     
     _ = try e.write_buf.writer().write("\x1b[?25h");
@@ -325,7 +339,7 @@ fn editorMoveCursor(key: u16, e: *Editor) void {
             if (e.cursor_y != 0) e.cursor_y -= 1;
         },
         @intFromEnum(EditorKey.arrow_down) => {
-            if (e.cursor_y != e.screenrows - 1) e.cursor_y += 1;
+            if (e.cursor_y < e.num_rows) e.cursor_y += 1;
         },
         else => {},
     }
@@ -366,6 +380,7 @@ fn editorProcessKeypress(e: *Editor) !void {
 fn initEditor(e: *Editor) !void {
     e.cursor_x = 0;
     e.cursor_y = 0;
+    e.row_offset = 0;
     e.num_rows = 0;
 
     var ws = try getWindowSize(e);
@@ -396,6 +411,7 @@ pub fn main() !void {
     var e = Editor{
         .cursor_x = undefined,
         .cursor_y = undefined,
+        .row_offset = undefined,
         .screencols = undefined, 
         .screenrows = undefined,
         .num_rows = undefined,
