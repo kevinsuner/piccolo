@@ -31,7 +31,7 @@ const Editor = struct {
     screencols: u16,
     screenrows: u16,
     num_rows: u16,
-    row: EditorRow,
+    row: std.ArrayList(EditorRow),
     tty: fs.File,
     og_termios: os.termios,
     allocator: mem.Allocator,
@@ -228,6 +228,16 @@ fn getWindowSize(e: *Editor) !i16 {
 }
 
 // ========================================================
+// Row Operations
+// ========================================================
+
+fn editorAppendRow(e: *Editor, items: []u8) !void {
+    var str = try fmt.allocPrint(e.allocator, "{s}\u{0000}", .{items});
+    try e.row.append(.{ .size = str.len, .chars = str });
+    e.num_rows += 1;
+}
+
+// ========================================================
 // File I/O
 // ========================================================
 
@@ -243,11 +253,8 @@ fn editorOpen(e: *Editor, path: []const u8) !void {
 
     const writer = line.writer();
     while (reader.streamUntilDelimiter(writer, '\n', null)) {
-        if (e.num_rows < 1) {
-            e.row.size = line.items.len;
-            e.row.chars = try fmt.allocPrint(e.allocator, "{s}\u{0000}", .{line.items});
-            e.num_rows = 1;
-        }
+        defer line.clearRetainingCapacity();
+        try editorAppendRow(e, line.items);
     } else |err| switch (err) {
         error.EndOfStream => {},
         else => return err,
@@ -262,7 +269,7 @@ fn editorDrawRows(e: *Editor) !void {
     var y: u8 = 0;
     while (y < e.screenrows) : (y += 1) {
         if (y >= e.num_rows) {
-            if (y == e.screenrows / 3) {
+            if (e.num_rows == 0 and y == e.screenrows / 3) {
                 var welcome_msg = try fmt.allocPrint(e.allocator, "Piccolo Editor -- Version {s}", .{PICCOLO_VERSION});
                 var padding: u64 = (e.screencols - welcome_msg.len) / 2;
                 if (padding > 0) {
@@ -276,9 +283,9 @@ fn editorDrawRows(e: *Editor) !void {
                 _ = try e.write_buf.writer().write("~");
             }
         } else {
-            var len = e.row.size;
+            var len = e.row.items[y].size;
             if (len > e.screencols) len = e.screencols;
-            _ = try e.write_buf.writer().write(e.row.chars);
+            _ = try e.write_buf.writer().write(e.row.items[y].chars);
         }
 
         _ = try e.write_buf.writer().write("\x1b[K");
@@ -383,13 +390,16 @@ pub fn main() !void {
     var args = try process.argsAlloc(allocator);
     defer process.argsFree(allocator, args);
 
+    var row = std.ArrayList(EditorRow).init(allocator);
+    defer row.deinit();
+
     var e = Editor{
         .cursor_x = undefined,
         .cursor_y = undefined,
         .screencols = undefined, 
         .screenrows = undefined,
         .num_rows = undefined,
-        .row = undefined,
+        .row = row,
         .tty = tty, 
         .og_termios = undefined,
         .allocator = allocator,
