@@ -9,6 +9,7 @@ const linux = std.os.linux;
 const system = std.os.system;
 const fmt = std.fmt;
 const io = std.io;
+const debug = std.debug;
 
 /// A representation of the keys used by the editor that does not conflict
 /// with any ordinary keypresses.
@@ -68,15 +69,36 @@ const Editor = struct {
         var args = try process.argsAlloc(self.allocator);
         defer process.argsFree(self.allocator, args);
         
-        try self.enableRawMode();
+        self.enableRawMode() catch |err| try self.die("enableRawMode", err);
+        
         if (try self.getWindowSize() == -1) {
-            std.debug.print("getWindowSize\n", .{});
+            try self.disableRawMode();
+            debug.print("getWindowSize\n", .{});
             os.exit(1);
         }
         
-        try self.openFile(args[1]);
-        
-        std.debug.print("I have been inited: {d}\n", .{self.cursor_x});
+        self.openFile(args[1]) catch |err| try self.die("openFile", err);
+        debug.print("I have been inited: {d}\n", .{self.cursor_x});
+    }
+
+    /// Clears the screen and repositions the cursor, displays and error message,
+    /// and terminates the execution of the program.
+    fn die(self: *Editor, str: []const u8, erro: anyerror) !void {
+        _ = os.write(os.STDOUT_FILENO, "\x1b[2J") catch |err| {
+            try self.disableRawMode();
+            debug.print("os.write: {s}\n", .{@errorName(err)});
+            os.exit(1);
+        };
+
+        _ = os.write(os.STDOUT_FILENO, "\x1b[H") catch |err| {
+            try self.disableRawMode();
+            debug.print("os.write: {s}\n", .{@errorName(err)});
+            os.exit(1);
+        };
+
+        try self.disableRawMode();
+        debug.print("{s}: {s}\n", .{ str, @errorName(erro) });
+        os.exit(1);
     }
 
     /// Turns off the necessary flags to put the terminal in raw or `uncooked` mode,
@@ -141,6 +163,12 @@ const Editor = struct {
         try os.tcsetattr(self.tty.handle, .FLUSH, raw);
     }
 
+    /// Resets the terminal back to `cooked` mode by using the original,
+    /// termios configuration.
+    fn disableRawMode(self: *Editor) !void {
+        try os.tcsetattr(self.tty.handle, .FLUSH, self.termios);
+    }
+
     /// It uses `ioctl()` to determine the number of rows and columns, and
     /// `getCursorPosition` as a fallback to get the number of rows and columns.
     fn getWindowSize(self: *Editor) !i8 {
@@ -184,13 +212,13 @@ const Editor = struct {
         self.screen_cols = numbers[0];
         self.screen_rows = numbers[1];
 
-        _ = try self.editorReadKey();
+        _ = try self.readKey();
         return 0;
     }
 
     /// Determines whether a keypress is an escape sequence, and in that case
     /// processes it and gives it a representation, or if it just a regular keypress.
-    fn editorReadKey(self: *Editor) !u32 {
+    fn readKey(self: *Editor) !u32 {
         var buf: [1]u8 = undefined;
         _ = try self.tty.read(&buf);
 
@@ -257,7 +285,7 @@ const Editor = struct {
         const writer = line.writer();
         while (reader.streamUntilDelimiter(writer, '\n', null)) {
             defer line.clearRetainingCapacity();
-            try self.editorAppendRow(line.items);
+            try self.appendRow(line.items);
         } else |err| switch (err) {
             error.EndOfStream => {},
             else => return err,
@@ -266,7 +294,7 @@ const Editor = struct {
 
     /// Allocates a new null-terminated string using the items passed through the
     /// arguments, and appends a new row to the editor.
-    fn editorAppendRow(self: *Editor, items: []u8) !void {
+    fn appendRow(self: *Editor, items: []u8) !void {
         var str = try fmt.allocPrint(self.allocator, "{s}\u{0000}", .{items});
         defer self.allocator.free(str);
 
@@ -297,8 +325,13 @@ pub fn main() !void {
     }
     
     editor.allocator = gpa.allocator();
+    editor.init() catch |err| try editor.die("enableRawMode", err);
+
+    while (true) {
+        // editor.refreshScreen
+        // editor.processKeypress
+    }
     
-    try editor.init();
     defer editor.tty.close();
     defer editor.row.deinit();
 }
