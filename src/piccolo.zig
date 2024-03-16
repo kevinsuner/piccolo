@@ -11,9 +11,13 @@ const fmt = std.fmt;
 const io = std.io;
 const debug = std.debug;
 
+/// The version of the program.
+/// https://semver.org/
+const PICCOLO_VERSION = "0.1.0";
+
 /// A representation of the keys used by the editor that does not conflict
 /// with any ordinary keypresses.
-const EditorKey = enum(u16) {
+const EditorKey = enum(u32) {
     arrow_left = 1000,
     arrow_right,
     arrow_up,
@@ -99,6 +103,25 @@ const Editor = struct {
         try self.disableRawMode();
         debug.print("{s}: {s}\n", .{ str, @errorName(erro) });
         os.exit(1);
+    }
+
+    /// Clears the screen, repositions the cursor, and terminates the execution
+    /// of the program.
+    fn clean(self: *Editor) !void {
+        _ = os.write(os.STDOUT_FILENO, "\x1b[2J") catch |err| {
+            try self.disableRawMode();
+            debug.print("os.write: {s}\n", .{@errorName(err)});
+            os.exit(1);
+        };
+
+        _ = os.write(os.STDOUT_FILENO, "\x1b[H") catch |err| {
+            try self.disableRawMode();
+            debug.print("os.write: {s}\n", .{@errorName(err)});
+            os.exit(1);
+        };
+
+        try self.disableRawMode();
+        os.exit(0);
     }
 
     /// Turns off the necessary flags to put the terminal in raw or `uncooked` mode,
@@ -301,7 +324,139 @@ const Editor = struct {
         try self.row.append(.{ .size = @intCast(str.len), .chars = str });
         self.num_rows += 1;
     }
+
+    /// Initializes a buffer to perform a big write at the end of every refresh,
+    /// that way the whole screen updates at once. Uses the `[?25l` and `[?25h` 
+    /// escape sequences, to tell the terminal to hide and show the cursor.
+    /// Uses the `[H` escape sequence to position the cursor in the first row and
+    /// column, and also uses `[{d};{d}H` which is the same but with arguments, to
+    /// specify the exact position we want the cursor to move.
+    fn refreshScreen(self: *Editor) !void {
+        self.scroll();
+
+        self.write_buf = ArrayList(u8).init(self.allocator);
+        defer self.write_buf.deinit();
+
+        _ = try self.write_buf.writer().write("\x1b[?25l");
+        _ = try self.write_buf.writer().write("\x1b[H");
+
+        self.drawRows() catch |err| try self.die("drawRows", err);
+
+        var buf = try fmt.allocPrint(
+            self.allocator, 
+            "\x1b[{d};{d}H", 
+            .{(self.cursor_y - self.row_offset) + 1, self.cursor_x + 1}
+        );
+        defer self.allocator.free(buf);
+        
+        _ = try self.write_buf.writer().write(buf);
+        _ = try self.write_buf.writer().write("\x1b[?25h");
+        _ = try os.write(os.STDOUT_FILENO, self.write_buf.items);
+    }
+
+    /// Checks whether or not the cursor has moved outside of the visible window,
+    /// and if so, adjusts `row_offset` so that the cursor is just inside the
+    /// visible window.
+    fn scroll(self: *Editor) void {
+        if (self.cursor_y < self.row_offset) {
+            self.row_offset = self.cursor_y;
+        }
+
+        if (self.cursor_y >= self.row_offset + self.screen_rows) {
+            self.row_offset = self.cursor_y - self.screen_rows + 1;
+        }
+    }
+
+    /// If a file is not open, prints a welcome message in the center of the editor.
+    /// If a file is open, and its number of rows does not surpass `screen_rows`, prints
+    /// each line of the file, and fills the rest of the `screen_rows` with tildes.
+    /// If a file is open, and its number of rows surpasses our `screen_rows`, prints
+    /// each line of the file.
+    fn drawRows(self: *Editor) !void {
+        var y: u8 = 0;
+        while (y < self.screen_rows) : (y += 1) {
+            var file_row = y + self.row_offset;
+            if (file_row >= self.num_rows) {
+                if (self.num_rows == 0 and y == self.screen_rows / 3) {
+                    var welcome_msg = try fmt.allocPrint(self.allocator, "Piccolo Editor -- Version {s}", .{PICCOLO_VERSION});
+                    defer self.allocator.free(welcome_msg);
+
+                    var padding: u64 = (self.screen_cols - welcome_msg.len) / 2;
+                    if (padding > 0) {
+                        _ = try self.write_buf.writer().write("~");
+                        padding -= 1;
+                    }
+
+                    while (padding > 0) : (padding -= 1) _ = try self.write_buf.writer().write(" ");
+                    _ = try self.write_buf.writer().write(welcome_msg);
+                } else {
+                    _ = try self.write_buf.writer().write("~");
+                }
+            } else {
+                _ = try self.write_buf.writer().write(self.row.items[file_row].chars);
+            }
+
+            _ = try self.write_buf.writer().write("\x1b[K");
+            if (y < self.screen_rows - 1) _ = try self.write_buf.writer().write("\r\n");
+        }
+    }
+
+    /// Depending on the given key, moves the cursor in the X axis, or in the Y axis,
+    /// and checks for the cursor position to not be greater than the number of rows,
+    /// or columns, to prevent going out of bounds.
+    fn moveCursor(self: *Editor, key: u32) void {
+        switch (key) {
+            @intFromEnum(EditorKey.arrow_left) => {
+                if (self.cursor_x != 0) self.cursor_x -= 1;
+            },
+            @intFromEnum(EditorKey.arrow_right) => {
+                if (self.cursor_x != self.screen_cols - 1) self.cursor_x += 1;
+            },
+            @intFromEnum(EditorKey.arrow_up) => {
+                if (self.cursor_y != 0) self.cursor_y -= 1;
+            },
+            @intFromEnum(EditorKey.arrow_down) => {
+                if (self.cursor_y < self.num_rows) self.cursor_y += 1;
+            },
+            else => {},
+        }
+    }
+
+    /// Waits for a keypress to happen, and maps that key to a particular editor
+    /// function or handles it directly.
+    fn processKeypress(self: *Editor) !void {
+        var c = try self.readKey();
+        switch (c) {
+            ctrlKey('q') => try self.clean(),
+
+            @intFromEnum(EditorKey.home_key) => self.cursor_x = 0,
+            @intFromEnum(EditorKey.end_key) => self.cursor_x = self.screen_cols - 1,
+
+            @intFromEnum(EditorKey.page_up),
+            @intFromEnum(EditorKey.page_down) => {
+                var times = self.screen_rows;
+                while (times > 0) : (times -= 1) {
+                    if (c == @intFromEnum(EditorKey.page_up)) {
+                        self.moveCursor(@intFromEnum(EditorKey.arrow_up));
+                    } else {
+                        self.moveCursor(@intFromEnum(EditorKey.arrow_down));
+                    }
+                }
+            },
+
+            @intFromEnum(EditorKey.arrow_left),
+            @intFromEnum(EditorKey.arrow_right),
+            @intFromEnum(EditorKey.arrow_up),
+            @intFromEnum(EditorKey.arrow_down) => self.moveCursor(c),
+            else => {},
+        }
+    }
 };
+
+/// Bitwise-ANDs the given character with the value `00011111` in binary.
+fn ctrlKey(k: u8) u8 {
+    return (k) & 0x1f;
+}
 
 pub fn main() !void {
     var editor = Editor{
@@ -325,11 +480,11 @@ pub fn main() !void {
     }
     
     editor.allocator = gpa.allocator();
-    editor.init() catch |err| try editor.die("enableRawMode", err);
+    editor.init() catch |err| try editor.die("editor.init", err);
 
     while (true) {
-        // editor.refreshScreen
-        // editor.processKeypress
+        editor.refreshScreen() catch |err| try editor.die("editor.refreshScreen", err);
+        editor.processKeypress() catch |err| try editor.die("editor.processKeypress", err);
     }
     
     defer editor.tty.close();
