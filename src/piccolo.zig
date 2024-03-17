@@ -32,7 +32,7 @@ const EditorKey = enum(u32) {
 /// A structure for storing the size and the characters in a editor row.
 const EditorRow = struct {
     /// The size of the row.
-    size: u32, // unsigned so no negative values are allowed
+    size: usize, // unsigned so no negative values are allowed
     /// The characters of the row.
     chars: []u8,
 };
@@ -82,7 +82,6 @@ const Editor = struct {
         }
         
         self.openFile(args[1]) catch |err| try self.die("openFile", err);
-        debug.print("I have been inited: {d}\n", .{self.cursor_x});
     }
 
     /// Clears the screen and repositions the cursor, displays and error message,
@@ -319,9 +318,7 @@ const Editor = struct {
     /// arguments, and appends a new row to the editor.
     fn appendRow(self: *Editor, items: []u8) !void {
         var str = try fmt.allocPrint(self.allocator, "{s}\u{0000}", .{items});
-        defer self.allocator.free(str);
-
-        try self.row.append(.{ .size = @intCast(str.len), .chars = str });
+        try self.row.append(.{ .size = str.len, .chars = str });
         self.num_rows += 1;
     }
 
@@ -340,14 +337,13 @@ const Editor = struct {
         _ = try self.write_buf.writer().write("\x1b[?25l");
         _ = try self.write_buf.writer().write("\x1b[H");
 
-        self.drawRows() catch |err| try self.die("drawRows", err);
+        try self.drawRows();
 
         var buf = try fmt.allocPrint(
             self.allocator, 
             "\x1b[{d};{d}H", 
             .{(self.cursor_y - self.row_offset) + 1, self.cursor_x + 1}
         );
-        defer self.allocator.free(buf);
         
         _ = try self.write_buf.writer().write(buf);
         _ = try self.write_buf.writer().write("\x1b[?25h");
@@ -379,8 +375,6 @@ const Editor = struct {
             if (file_row >= self.num_rows) {
                 if (self.num_rows == 0 and y == self.screen_rows / 3) {
                     var welcome_msg = try fmt.allocPrint(self.allocator, "Piccolo Editor -- Version {s}", .{PICCOLO_VERSION});
-                    defer self.allocator.free(welcome_msg);
-
                     var padding: u64 = (self.screen_cols - welcome_msg.len) / 2;
                     if (padding > 0) {
                         _ = try self.write_buf.writer().write("~");
