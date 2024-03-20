@@ -410,7 +410,12 @@ const Editor = struct {
                 }
             },
             @intFromEnum(EditorKey.arrow_right) => {
-                if (self.cursor_x < row.size) self.cursor_x += 1;
+                if (self.cursor_x < row.size) {
+                    self.cursor_x += 1;
+                } else if (self.cursor_x == row.size) {
+                    self.cursor_y += 1;
+                    self.cursor_x = 0;
+                }
             },
             @intFromEnum(EditorKey.arrow_up) => {
                 if (self.cursor_y != 0) self.cursor_y -= 1;
