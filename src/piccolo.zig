@@ -399,12 +399,13 @@ const Editor = struct {
     /// and checks for the cursor position to not be greater than the number of rows,
     /// or columns, to prevent going out of bounds.
     fn moveCursor(self: *Editor, key: u32) void {
+        var row: EditorRow = if (self.cursor_y >= self.num_rows) undefined else self.row.items[self.cursor_y];
         switch (key) {
             @intFromEnum(EditorKey.arrow_left) => {
                 if (self.cursor_x != 0) self.cursor_x -= 1;
             },
             @intFromEnum(EditorKey.arrow_right) => {
-                if (self.cursor_x != self.screen_cols - 1) self.cursor_x += 1;
+                if (self.cursor_x < row.size) self.cursor_x += 1;
             },
             @intFromEnum(EditorKey.arrow_up) => {
                 if (self.cursor_y != 0) self.cursor_y -= 1;
