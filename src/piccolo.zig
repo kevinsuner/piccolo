@@ -33,8 +33,12 @@ const EditorKey = enum(u32) {
 const EditorRow = struct {
     /// The size of the row.
     size: u32, // unsigned so no negative values are allowed
+    /// The size of render.
+    render_size: u32,
     /// The characters of the row.
     chars: []u8,
+    /// The non-printable characters of the row.
+    render: []u8,
 };
 
 /// A structure for storing the configuration and state of the editor.
