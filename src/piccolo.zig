@@ -402,7 +402,12 @@ const Editor = struct {
         var row: EditorRow = if (self.cursor_y >= self.num_rows) undefined else self.row.items[self.cursor_y];
         switch (key) {
             @intFromEnum(EditorKey.arrow_left) => {
-                if (self.cursor_x != 0) self.cursor_x -= 1;
+                if (self.cursor_x != 0) {
+                    self.cursor_x -= 1;
+                } else if (self.cursor_y > 0) {
+                    self.cursor_y -= 1;
+                    self.cursor_x = self.row.items[self.cursor_y].size;
+                }
             },
             @intFromEnum(EditorKey.arrow_right) => {
                 if (self.cursor_x < row.size) self.cursor_x += 1;
