@@ -32,7 +32,7 @@ const EditorKey = enum(u32) {
 /// A structure for storing the size and the characters in a editor row.
 const EditorRow = struct {
     /// The size of the row.
-    size: usize, // unsigned so no negative values are allowed
+    size: u32, // unsigned so no negative values are allowed
     /// The characters of the row.
     chars: []u8,
 };
@@ -318,7 +318,7 @@ const Editor = struct {
     /// arguments, and appends a new row to the editor.
     fn appendRow(self: *Editor, items: []u8) !void {
         var str = try fmt.allocPrint(self.allocator, "{s}\u{0000}", .{items});
-        try self.row.append(.{ .size = str.len, .chars = str });
+        try self.row.append(.{ .size = @intCast(str.len), .chars = str });
         self.num_rows += 1;
     }
 
@@ -414,6 +414,11 @@ const Editor = struct {
                 if (self.cursor_y < self.num_rows) self.cursor_y += 1;
             },
             else => {},
+        }
+
+        row = if (self.cursor_y >= self.num_rows) undefined else self.row.items[self.cursor_y];
+        if (self.cursor_x > row.size) {
+            self.cursor_x = row.size;
         }
     }
 
